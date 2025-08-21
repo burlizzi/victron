@@ -1,7 +1,7 @@
 #pragma once
 #include <sstream>
 #include "esphome/core/component.h"
-#include "esphome/components/uart/uart.h"
+#include "esphome/components/uart/uart_component_esp_idf.h"
 
 namespace esphome
 {
@@ -13,16 +13,21 @@ namespace esphome
         public:
             Ess(uart::UARTComponent *uart) : uart_(uart)
             {
-                // Initialize the VEBus with the default definition
-                //_vEBus.set_definition(VEBusDefinition::get_instance());
             }
             void setup() override;
             float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
             void loop() override;
             void dump_config() override;
-
+            uart::IDFUARTComponent * getUart() { return static_cast<uart::IDFUARTComponent *>(this->uart_); }  
+            void on_uart_data(int size)
+            {
+                // Handle the received data here
+                ESP_LOGD(TAG, "Received %d bytes of data", size);
+                // Process the data as needed
+            }
         protected:
             uart::UARTComponent *uart_;
+
             int commandReplaceFAtoFF(uint8_t *outbuf, uint8_t *inbuf, int inlength);
             int destuffFAtoFF(uint8_t *outbuf, uint8_t *inbuf, int inlength);
             bool verifyChecksum(uint8_t *inbuf, int inlength);

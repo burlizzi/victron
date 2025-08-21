@@ -1,15 +1,33 @@
 
 #include "ess.h"
 #include "esphome/core/log.h"
-
-
+#include "driver/uart.h"
 
 namespace esphome
 {
     namespace victron
     {
+        static void uart_event_task(void *pvParameters)
+        {
+            Ess *self = static_cast<Ess *>(pvParameters);
+            uart_event_t event;
+            for (;;)
+            {
+                // Wait for UART event.
+                if (xQueueReceive(*self->getUart()->get_uart_event_queue(), (void *)&event, (TickType_t)portMAX_DELAY))
+                {
+                    if (event.type == UART_DATA)
+                    {
+                        // Data received, call your callback or process data here
+                        self->on_uart_data(event.size);
+                    }
+                    // Handle other event types if needed
+                }
+            }
+        }
         void Ess::setup()
         {
+            xTaskCreate(uart_event_task, "uart_event_task", 2048, this, 12, NULL);
         }
         void Ess::loop()
         {
