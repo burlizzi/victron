@@ -1,22 +1,286 @@
 
 #include "ess.h"
+#include "esphome/core/log.h"
+
+
 
 namespace esphome
 {
     namespace victron
     {
-            void Ess::setup() 
-            {
+        void Ess::setup()
+        {
+        }
+        void Ess::loop()
+        {
+            multiplusCommandHandling(uart_);
+        }
+        void Ess::dump_config()
+        {
+            ESP_LOGCONFIG(TAG, "Victron ESS:");
+            // ESP_LOG("victron.ess", "Ess", this);
+        }
+        int Ess::commandReplaceFAtoFF(uint8_t *outbuf, uint8_t *inbuf, int inlength)
+        {
+            int j = 0;
+            // copy over the first 4 bytes of command, as there is no replacement
+            for (int i = 0; i < 4; i++)
+                outbuf[j++] = inbuf[i];
 
-            }
-            void Ess::loop() 
+            // starting from 5th unsigned char, replace 0xFA..FF with double-byte character
+            for (int i = 4; i < inlength; i++)
             {
-                
+                unsigned char c = inbuf[i];
+                if (c >= 0xFA)
+                {
+                    outbuf[j++] = 0xFA;
+                    outbuf[j++] = 0x70 | (c & 0x0F);
+                }
+                else
+                    outbuf[j++] = c; // no replacement
             }
-            void Ess::dump_config() 
+            return j; // new length of output frame
+        }
+
+        bool Ess::verifyChecksum(uint8_t *inbuf, int inlength)
+        {
+            unsigned char cs = 0;
+            for (int i = 2; i < inlength; i++)
+                cs += inbuf[i]; // sum over all bytes excluding the first two (address)
+            if (cs == 0)
+                return true;
+            else
+                return false;
+        }
+
+        int Ess::appendChecksum(uint8_t *buf, int inlength)
+        {
+            int j = 0;
+            // calculate checksum starting from 3rd unsigned char
+            unsigned char cs = 1;
+            for (int i = 2; i < inlength; i++)
             {
-                ESP_LOGCONFIG(TAG, "Victron ESS:");
-                LOG_COMPONENT("victron.ess", "Ess", this);
+                cs -= buf[i];
             }
-    }
-}
+            j = inlength;
+            if (cs >= 0xFB) // EXCEPTION: Only replace starting from 0xFB
+            {
+                buf[j++] = 0xFA;
+                buf[j++] = (cs - 0xFA);
+            }
+            else
+            {
+                buf[j++] = cs;
+            }
+            buf[j++] = 0xFF; // append End Of Frame symbol
+            return j;        // new length of output frame
+        }
+
+        void Ess::sendmsg(int msgtype, esphome::uart::UARTComponent *uart, short essPower)
+        {
+            int len;
+            if (msgtype == 1)
+                len = prepareESScommand(txbuf1, essPower, (frameNr + 1) & 0x7F);
+            if (msgtype == 2)
+                len = preparecmd(txbuf1, (frameNr + 1) & 0x7F);
+            if (msgtype == 3)
+                len = cmdOnOff(txbuf1, (frameNr + 1) & 0x7F, false);
+            if (msgtype == 4)
+                len = cmdOnOff(txbuf1, (frameNr + 1) & 0x7F, true);
+            len = commandReplaceFAtoFF(txbuf2, txbuf1, len);
+            len = appendChecksum(txbuf2, len);
+            // write command into Multiplus :-)
+            uart->write_array(txbuf2, len); // write command bytes to UART
+        }
+
+        void Ess::decodeVEbusFrame(uint8_t *frame, int len)
+        {
+            // data frame
+            if (frame[4] == 0x80) // 80 = Condition of Charger/Inverter (Temp+Current)
+            {
+                if ((frame[5] == 0x80) && ((frame[6] & 0xFE) == 0x12) && (frame[8] == 0x80) && ((frame[11] & 0x10) == 0x10))
+                {
+                    multiplusStatus80 = frame[7];
+                    multiplusDcLevelAllowsInverting = (frame[6] & 0x01);
+                    int16_t t = 256 * frame[10] + frame[9];
+                    multiplusDcCurrent = 0.1 * t;
+                    if ((frame[11] & 0xF0) == 0x30)
+                        multiplusTemp = 0.1 * frame[15];
+                }
+            }
+            else if (frame[4] == 0xE4) // E4 = AC phase information (comes with 50Hz)
+            {
+                // 83 83 fe 51 e4  80 56 c3 c3 a6 4c be 8f d3 68 19 4b 7a 00  1a ff
+                // 83 83 fe 68 e4  2b 46 c3 9c 68 31 be 8f d8 68 19 4b 7a 00  e3 ff
+                // 83 83 fe 3d e4  13 5e c3 c4 dc 39 be 8f 7d 68 0b 4b 7a 00  d3 ff
+            }
+            else if (frame[4] == 0x70) // 70 = DC capacity counter)
+            {
+                // 83 83 fe 23 70  81 44 16 5e 01 c2 00 00  74 ff
+                // 83 83 fe 20 70  81 44 16 5e 01 c2 00 00  77 ff
+            }
+            else if (frame[4] == 0x41) // 41 = Multiplus mode / master led
+            {
+                if ((len == 19) && (frame[5] == 0x10)) // frame[5] unknown byte
+                {
+                    masterMultiLED_LEDon = frame[6];
+                    masterMultiLED_LEDblink = frame[7];
+                    masterMultiLED_Status = frame[8];
+                    masterMultiLED_AcInputConfiguration = frame[9];
+                    int16_t t = 256 * frame[11] + frame[10];
+                    masterMultiLED_MinimumInputCurrentLimit = t / 10.0;
+                    t = 256 * frame[13] + frame[12];
+                    masterMultiLED_MaximumInputCurrentLimit = t / 10.0;
+                    t = 256 * frame[15] + frame[14];
+                    masterMultiLED_ActualInputCurrentLimit = t / 10.0;
+                    masterMultiLED_SwitchRegister = frame[16];
+                }
+            }
+            else if (frame[4] == 0x38) // ?
+            {
+                // 83 83 fe 05 38 01 c0 c0 45 ff
+                // for (int i=0;i<len;i++) extframe[i] = frame[i];
+                // extframelen = len;
+            }
+            else if (frame[4] == 0x00) // ack or response
+            {
+                if (frame[5] == 0xE6)
+                {
+                    if (frame[6] == 0x87)
+                        acked = true;
+                    else if (frame[6] == 0x85)
+                    {
+                        gotMP2data = true;
+                        int16_t v = 256 * frame[8] + frame[7];
+                        BatVolt = 0.01 * float(v);
+                        ACPower = 256 * frame[10] + frame[9];
+                        // MP2Soc  = 256*frame[10] + frame[9];
+                        // ACPower = 256*frame[12] + frame[11];
+                    }
+                    else
+                    {
+                    }
+                }
+            }
+            else
+            {
+            }
+        }
+
+        void Ess::multiplusCommandHandling(esphome::uart::UARTComponent *uart)
+        {
+            // Check for new bytes on UART
+            while (uart->available())
+            {
+                uint8_t c;
+                uart->read_byte(&c); // read one byte
+                frbuf1[frp++] = c;   // store into framebuffer
+                if (c == 0x55)
+                {
+                    if (frp == 5)
+                        synctime = esphome::millis();
+                }
+                if (c == 0xFF) // in case current byte was EndOfFrame, interprete frame
+                {
+                    if ((frbuf1[2] == 0xFD) && (frbuf1[4] == 0x55)) // if it was a sync frame:
+                    {
+                        frameNr = frbuf1[3];
+                        syncrxed = true;
+                    }
+                    else if ((frbuf1[0] == 0x83) && (frbuf1[1] == 0x83) && (frbuf1[2] == 0xFE))
+                    {
+                        if (verifyChecksum(frbuf1, frp))
+                        {
+                            frlen = destuffFAtoFF(frbuf2, frbuf1, frp);
+                            decodeVEbusFrame(frbuf2, frlen);
+                        }
+                        else
+                            chksmfault++;
+                    }
+                    rxnum = frlen;
+                    frp = 0;
+                }
+                else
+                    syncrxed = false; // unexpected char received
+            }
+        }
+
+        int Ess::prepareESScommand(uint8_t *outbuf, short power, unsigned char desiredFrameNr)
+        {
+            unsigned char j = 0;
+            outbuf[j++] = 0x98; // MK3 interface to Multiplus
+            outbuf[j++] = 0xf7; // MK3 interface to Multiplus
+            outbuf[j++] = 0xfe; // data frame
+            outbuf[j++] = desiredFrameNr;
+            outbuf[j++] = 0x00;           // our own ID
+            outbuf[j++] = 0xe6;           // our own ID
+            outbuf[j++] = 0x37;           // CommandWriteViaID
+            outbuf[j++] = 0x02;           // Flags, 0x02=RAMvar and no EEPROM
+            outbuf[j++] = 0x83;           // ID = address of ESS power in assistand memory
+            outbuf[j++] = (power & 0xFF); // Lo value of power (positive = into grid, negative = from grid)
+            outbuf[j++] = (power >> 8);   // Hi value of power (positive = into grid, negative = from grid)
+            return j;
+        }
+
+        int Ess::preparecmd(uint8_t *outbuf, unsigned char desiredFrameNr)
+        {
+            unsigned char j = 0;
+            outbuf[j++] = 0x98; // MK3 interface to Multiplus
+            outbuf[j++] = 0xf7; // MK3 interface to Multiplus
+            outbuf[j++] = 0xfe; // data frame
+            outbuf[j++] = desiredFrameNr;
+            outbuf[j++] = 0x00; // our own ID
+            outbuf[j++] = 0xe6; // our own ID
+            outbuf[j++] = 0x30; // Command read ram
+            outbuf[j++] = 0x04; // 4-bat volt
+            // outbuf[j++] = 0x0D;           //13-SOC
+            outbuf[j++] = 0x0E; // 14-AC Power
+            return j;
+        }
+
+        int Ess::cmdOnOff(uint8_t *outbuf, unsigned char desiredFrameNr, bool doon)
+        {
+            // 98F7 FE 60 3F07 0000005DFF wakeup
+            // 98F7 FE 6F 3F04 00000051FF sleep
+            unsigned char j = 0;
+            outbuf[j++] = 0x98; // MK3 interface to Multiplus
+            outbuf[j++] = 0xf7; // MK3 interface to Multiplus
+            outbuf[j++] = 0xfe; // data frame
+            outbuf[j++] = desiredFrameNr;
+            outbuf[j++] = 0x3F; // cmd
+            if (doon)
+                outbuf[j++] = 0x07; // wakeup
+            else
+                outbuf[j++] = 0x04; // sleep
+            outbuf[j++] = 0x00;
+            outbuf[j++] = 0x00;
+            outbuf[j++] = 0x00;
+            return j;
+        }
+        int Ess::destuffFAtoFF(uint8_t *outbuf, uint8_t *inbuf, int inlength)
+        {
+            int j = 0;
+            for (int i = 0; i < 4; i++)
+                outbuf[j++] = inbuf[i];
+            for (int i = 4; i < inlength; i++)
+            {
+                unsigned char c = inbuf[i];
+                if (c == 0xFA)
+                {
+                    c = inbuf[++i];
+                    if (c == 0xFF) // if 0xFA is the checksum, leave the FA and following FF (end of frame) in as it was.
+                    {
+                        outbuf[j++] = 0xFA;
+                        outbuf[j++] = c;
+                    }
+                    else
+                        outbuf[j++] = c + 0x80;
+                }
+                else
+                    outbuf[j++] = c; // no replacement
+            }
+            return j; // new length of output frame
+        }
+
+    } // namespace victron
+} // namespace esphome
