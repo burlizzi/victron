@@ -1,5 +1,5 @@
 
-#include "ess.h"
+#include "Ess.h"
 #include "esphome/core/log.h"
 #include "driver/uart.h"
 
