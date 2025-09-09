@@ -27,11 +27,11 @@ namespace esphome
         }
         void Ess::setup()
         {
-            xTaskCreate(uart_event_task, "uart_event_task", 2048, this, 12, NULL);
+            //xTaskCreate(uart_event_task, "uart_event_task", 2048, this, 12, NULL);
         }
         void Ess::loop()
         {
-            multiplusCommandHandling(uart_);
+            multiplusCommandHandling();
         }
         void Ess::dump_config()
         {
@@ -94,7 +94,7 @@ namespace esphome
             return j;        // new length of output frame
         }
 
-        void Ess::sendmsg(int msgtype, esphome::uart::UARTComponent *uart, short essPower)
+        void Ess::sendmsg(int msgtype, short essPower)
         {
             int len;
             if (msgtype == 1)
@@ -108,7 +108,7 @@ namespace esphome
             len = commandReplaceFAtoFF(txbuf2, txbuf1, len);
             len = appendChecksum(txbuf2, len);
             // write command into Multiplus :-)
-            uart->write_array(txbuf2, len); // write command bytes to UART
+            uart_->write_array(txbuf2, len); // write command bytes to UART
         }
 
         void Ess::decodeVEbusFrame(uint8_t *frame, int len)
@@ -123,7 +123,11 @@ namespace esphome
                     int16_t t = 256 * frame[10] + frame[9];
                     multiplusDcCurrent = 0.1 * t;
                     if ((frame[11] & 0xF0) == 0x30)
+                    {
                         multiplusTemp = 0.1 * frame[15];
+                        ESP_LOGI(TAG, "Multiplus Temp: %.1f", multiplusTemp);
+                    }
+                        
                 }
             }
             else if (frame[4] == 0xE4) // E4 = AC phase information (comes with 50Hz)
@@ -185,13 +189,13 @@ namespace esphome
             }
         }
 
-        void Ess::multiplusCommandHandling(esphome::uart::UARTComponent *uart)
+        void Ess::multiplusCommandHandling()
         {
             // Check for new bytes on UART
-            while (uart->available())
+            while (uart_->available())
             {
                 uint8_t c;
-                uart->read_byte(&c); // read one byte
+                uart_->read_byte(&c); // read one byte
                 frbuf1[frp++] = c;   // store into framebuffer
                 if (c == 0x55)
                 {

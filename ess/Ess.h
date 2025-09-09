@@ -32,9 +32,9 @@ namespace esphome
             int destuffFAtoFF(uint8_t *outbuf, uint8_t *inbuf, int inlength);
             bool verifyChecksum(uint8_t *inbuf, int inlength);
             int appendChecksum(uint8_t *buf, int inlength);
-            void sendmsg(int msgtype, uart::UARTComponent *uart, short essPower);
+            void sendmsg(int msgtype, short essPower);
             void decodeVEbusFrame(uint8_t *frame, int len);
-            void multiplusCommandHandling(esphome::uart::UARTComponent *uart);
+            void multiplusCommandHandling();
             int cmdOnOff(uint8_t *outbuf, unsigned char desiredFrameNr, bool doon);
             int prepareESScommand(uint8_t *outbuf, short power, unsigned char desiredFrameNr);
             int preparecmd(uint8_t *outbuf, unsigned char desiredFrameNr);
