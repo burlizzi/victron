@@ -17,6 +17,9 @@ namespace esphome
             void setup() override;
             float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
             void loop() override;
+            void on() { sendmsg(4, 0); }
+            void off() { sendmsg(3, 0); }
+            void power(short essPower) { sendmsg(1, essPower); }
             void dump_config() override;
             uart::IDFUARTComponent * getUart() { return static_cast<uart::IDFUARTComponent *>(this->uart_); }  
             void on_uart_data(int size)
