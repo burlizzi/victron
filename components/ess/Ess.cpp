@@ -124,7 +124,7 @@ namespace esphome
                     multiplusDcCurrent = 0.1 * t;
                     if ((frame[11] & 0xF0) == 0x30)
                     {
-                        multiplusTemp = 0.1 * frame[15];
+                        multiplusTemp = 0.1 * frame[15]*2-8; //pv-baxi's guess: (*2.0 - 8°C) as otherwise temperature is too low
                         ESP_LOGI(TAG, "Multiplus Temp: %.1f", multiplusTemp);
                     }
                         
@@ -190,7 +190,7 @@ namespace esphome
         }
 
         void Ess::multiplusCommandHandling()
-        {
+        {            
             // Check for new bytes on UART
             while (uart_->available())
             {
