@@ -19,7 +19,7 @@ namespace esphome
             void loop() override;
             void on() { sendmsg(4, 0); }
             void off() { sendmsg(3, 0); }
-            void power(short essPower) { sendmsg(1, essPower); }
+            void power(short essPower) { desiredPower = essPower; }
             void dump_config() override;
             uart::IDFUARTComponent * getUart() { return static_cast<uart::IDFUARTComponent *>(this->uart_); }  
             void on_uart_data(int size)
@@ -76,7 +76,12 @@ namespace esphome
             bool multiplusDcLevelAllowsInverting;
             bool acked = false; // acknowledge of last command sent to Multiplus
             float BatVolt;
+            float multiplusAcFrequency;
+            float multiplusPowerFactor;
+            float multiplusAcPhase;
+            float multiplusDcVoltage;
             int16_t ACPower;
+            int16_t desiredPower;
         };
     }
 }

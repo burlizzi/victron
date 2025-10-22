@@ -31,6 +31,7 @@ namespace esphome
         }
         void Ess::loop()
         {
+            
             multiplusCommandHandling();
         }
         void Ess::dump_config()
@@ -122,6 +123,8 @@ namespace esphome
                     multiplusDcLevelAllowsInverting = (frame[6] & 0x01);
                     int16_t t = 256 * frame[10] + frame[9];
                     multiplusDcCurrent = 0.1 * t;
+
+                    ESP_LOGI(TAG, "Multiplus current: %.1f", multiplusDcCurrent);
                     if ((frame[11] & 0xF0) == 0x30)
                     {
                         multiplusTemp = 0.1 * frame[15]*2-8; //pv-baxi's guess: (*2.0 - 8°C) as otherwise temperature is too low
@@ -135,6 +138,25 @@ namespace esphome
                 // 83 83 fe 51 e4  80 56 c3 c3 a6 4c be 8f d3 68 19 4b 7a 00  1a ff
                 // 83 83 fe 68 e4  2b 46 c3 9c 68 31 be 8f d8 68 19 4b 7a 00  e3 ff
                 // 83 83 fe 3d e4  13 5e c3 c4 dc 39 be 8f 7d 68 0b 4b 7a 00  d3 ff
+              if ( (len==21) ) {
+                uint16_t ut = (frame[7]<<8) + frame[6];
+                multiplusAcFrequency = ut / 1000.0;
+                //multiplusE4_Timestamp = (frame[10]<<16) + (frame[9]<<8) + frame[8];
+                //multiplusE4_byte11 = frame[11];
+                //multiplusE4_byte12 = frame[12];
+                int16_t it = (frame[14]<<8) + frame[13];
+                multiplusPowerFactor = it / 32768.0;
+                multiplusAcPhase = frame[15];
+                ut = ((frame[17] & 0x0F)<<8) + frame[16];
+                multiplusDcVoltage = ut / 50.0;
+                static int count=0;
+                if(count++==100)//2sec
+                {
+                    count=0;
+                    ESP_LOGD(TAG, "Multiplus DC volt: %.1f ACfreq: %.1f", multiplusDcVoltage,multiplusAcFrequency);
+
+                }
+              }
             }
             else if (frame[4] == 0x70) // 70 = DC capacity counter)
             {
@@ -176,6 +198,7 @@ namespace esphome
                         int16_t v = 256 * frame[8] + frame[7];
                         BatVolt = 0.01 * float(v);
                         ACPower = 256 * frame[10] + frame[9];
+                        //ESP_LOGD(TAG,"bat volt: %.1f ACPower: %d",BatVolt,ACPower);
                         // MP2Soc  = 256*frame[10] + frame[9];
                         // ACPower = 256*frame[12] + frame[11];
                     }
