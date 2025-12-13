@@ -2,12 +2,34 @@
 #include "Ess.h"
 #include "esphome/core/log.h"
 #include "driver/uart.h"
-
+#include "driver/gpio.h"
 namespace esphome
 {
     namespace victron
     {
-        static void uart_event_task(void *pvParameters)
+
+        
+        void EssNumber::control(float timeout){
+            this->parent_->power(static_cast<short>(timeout));
+        }
+        int prepareCommandReadRAMVar(unsigned char *outbuf, uint8_t desiredFrameNr)
+        {
+        uint8_t j=0;
+        outbuf[j++] = 0x98;           //MK3 interface to Multiplus
+        outbuf[j++] = 0xf7;           //MK3 interface to Multiplus
+        outbuf[j++] = 0xfe;           //data frame
+        outbuf[j++] = desiredFrameNr;
+        outbuf[j++] = 0x00;           //our own ID
+        outbuf[j++] = 0xe6;           //our own ID
+        outbuf[j++] = 0x30;           //CommandReadRAMVar
+        outbuf[j++] = 0;              //0=UmainsRMS             1st RAM ID (up to 6 possible)
+        outbuf[j++] = 0x0f;             //15=PmainsFiltered       2nd RAM ID
+        outbuf[j++] = 0x0e;             //14=PinverterFiltered    3rd RAM ID
+        outbuf[j++] = 1;             //16=PoutputFiltered      4th RAM ID
+        return j;
+        }
+
+        void Ess::uart_event_task(void *pvParameters)
         {
             Ess *self = static_cast<Ess *>(pvParameters);
             uart_event_t event;
@@ -19,7 +41,8 @@ namespace esphome
                     if (event.type == UART_DATA)
                     {
                         // Data received, call your callback or process data here
-                        self->on_uart_data(event.size);
+
+                        self->multiplusCommandHandling();
                     }
                     // Handle other event types if needed
                 }
@@ -27,12 +50,12 @@ namespace esphome
         }
         void Ess::setup()
         {
-            //xTaskCreate(uart_event_task, "uart_event_task", 2048, this, 12, NULL);
+            xTaskCreate(uart_event_task, "uart_event_task", 4096, this, 12, NULL);
         }
         void Ess::loop()
         {
             
-            multiplusCommandHandling();
+            //multiplusCommandHandling();
         }
         void Ess::dump_config()
         {
@@ -98,117 +121,153 @@ namespace esphome
         void Ess::sendmsg(int msgtype, short essPower)
         {
             int len;
-            if (msgtype == 1)
-                len = prepareESScommand(txbuf1, essPower, (frameNr + 1) & 0x7F);
-            if (msgtype == 2)
-                len = preparecmd(txbuf1, (frameNr + 1) & 0x7F);
-            if (msgtype == 3)
-                len = cmdOnOff(txbuf1, (frameNr + 1) & 0x7F, false);
-            if (msgtype == 4)
-                len = cmdOnOff(txbuf1, (frameNr + 1) & 0x7F, true);
+            switch (msgtype)
+            {
+                case 1: // ESS power command
+                    len = prepareESScommand(txbuf1, essPower, (frameNr + 1) & 0x7F);
+                    break;
+                case 2: // Read RAM variables
+                    len = prepareCommandReadRAMVar(txbuf1, (frameNr + 1) & 0x7F);
+                    break;
+                case 3: // ESS off
+                    len = cmdOnOff(txbuf1, (frameNr + 1) & 0x7F, false);
+                    break;
+                case 4: // ESS on
+                    len = cmdOnOff(txbuf1, (frameNr + 1) & 0x7F, true);
+                    break;
+                default:
+                    ESP_LOGE(TAG, "Unknown ESS command type %d", msgtype);
+                    return;
+            }
             len = commandReplaceFAtoFF(txbuf2, txbuf1, len);
             len = appendChecksum(txbuf2, len);
             // write command into Multiplus :-)
+            //gpio_reset_pin(GPIO_NUM_18);
+            //gpio_set_direction(GPIO_NUM_18, GPIO_MODE_OUTPUT);
+
+            //gpio_set_level(GPIO_NUM_18, 1);
+            ESP_LOGV(TAG,"Sending ESS command, len=%d", len);
             uart_->write_array(txbuf2, len); // write command bytes to UART
+            //gpio_set_level(GPIO_NUM_18, 0);
         }
 
         void Ess::decodeVEbusFrame(uint8_t *frame, int len)
         {
+            ESP_LOGVV(TAG, "Decoding VE.bus frame, len=%d", len);
             // data frame
-            if (frame[4] == 0x80) // 80 = Condition of Charger/Inverter (Temp+Current)
+            switch(frame[4])
             {
-                if ((frame[5] == 0x80) && ((frame[6] & 0xFE) == 0x12) && (frame[8] == 0x80) && ((frame[11] & 0x10) == 0x10))
+                case 0x80: // 80 = Condition of Charger/Inverter (Temp+Current)
                 {
-                    multiplusStatus80 = frame[7];
-                    multiplusDcLevelAllowsInverting = (frame[6] & 0x01);
-                    int16_t t = 256 * frame[10] + frame[9];
-                    multiplusDcCurrent = 0.1 * t;
+                    if ((frame[5] == 0x80) && ((frame[6] & 0xFE) == 0x12) && (frame[8] == 0x80) && ((frame[11] & 0x10) == 0x10))
+                    {
+                        multiplusStatus80 = frame[7];
+                        multiplusDcLevelAllowsInverting = (frame[6] & 0x01);
+                        int16_t t = 256 * frame[10] + frame[9];
+                        multiplusDcCurrent = 0.1 * t;
 
-                    ESP_LOGI(TAG, "Multiplus current: %.1f", multiplusDcCurrent);
-                    if ((frame[11] & 0xF0) == 0x30)
-                    {
-                        multiplusTemp = 0.1 * frame[15]*2-8; //pv-baxi's guess: (*2.0 - 8°C) as otherwise temperature is too low
-                        ESP_LOGI(TAG, "Multiplus Temp: %.1f", multiplusTemp);
+                        //ESP_LOGI(TAG, "Multiplus current: %.1f", multiplusDcCurrent);
+                        if ((frame[11] & 0xF0) == 0x30)
+                        {
+                            multiplusTemp = 0.1 * frame[15]*2-8; //pv-baxi's guess: (*2.0 - 8°C) as otherwise temperature is too low
+                            ESP_LOGD(TAG, "Multiplus Temp: %.1f", multiplusTemp);
+                        }
+                            
                     }
-                        
                 }
-            }
-            else if (frame[4] == 0xE4) // E4 = AC phase information (comes with 50Hz)
-            {
-                // 83 83 fe 51 e4  80 56 c3 c3 a6 4c be 8f d3 68 19 4b 7a 00  1a ff
-                // 83 83 fe 68 e4  2b 46 c3 9c 68 31 be 8f d8 68 19 4b 7a 00  e3 ff
-                // 83 83 fe 3d e4  13 5e c3 c4 dc 39 be 8f 7d 68 0b 4b 7a 00  d3 ff
-              if ( (len==21) ) {
-                uint16_t ut = (frame[7]<<8) + frame[6];
-                multiplusAcFrequency = ut / 1000.0;
-                //multiplusE4_Timestamp = (frame[10]<<16) + (frame[9]<<8) + frame[8];
-                //multiplusE4_byte11 = frame[11];
-                //multiplusE4_byte12 = frame[12];
-                int16_t it = (frame[14]<<8) + frame[13];
-                multiplusPowerFactor = it / 32768.0;
-                multiplusAcPhase = frame[15];
-                ut = ((frame[17] & 0x0F)<<8) + frame[16];
-                multiplusDcVoltage = ut / 50.0;
-                static int count=0;
-                if(count++==100)//2sec
+                break;
+                case 0xE4: // E4 = AC phase information (comes with 50Hz)
                 {
-                    count=0;
-                    ESP_LOGD(TAG, "Multiplus DC volt: %.1f ACfreq: %.1f", multiplusDcVoltage,multiplusAcFrequency);
+                    // 83 83 fe 51 e4  80 56 c3 c3 a6 4c be 8f d3 68 19 4b 7a 00  1a ff
+                    // 83 83 fe 68 e4  2b 46 c3 9c 68 31 be 8f d8 68 19 4b 7a 00  e3 ff
+                    // 83 83 fe 3d e4  13 5e c3 c4 dc 39 be 8f 7d 68 0b 4b 7a 00  d3 ff
+                if ( (len==21) ) {
+                    uint16_t ut = (frame[7]<<8) + frame[6];
+                    multiplusAcFrequency = ut / 1000.0;
+                    //multiplusE4_Timestamp = (frame[10]<<16) + (frame[9]<<8) + frame[8];
+                    //multiplusE4_byte11 = frame[11];
+                    //multiplusE4_byte12 = frame[12];
+                    int16_t it = (frame[14]<<8) + frame[13];
+                    multiplusPowerFactor = it / 32768.0;
+                    multiplusAcPhase = frame[15];
+                    ut = ((frame[17] & 0x0F)<<8) + frame[16];
+                    multiplusDcVoltage = ut / 50.0;
+                    if (battery_!=nullptr)
+                        battery_->publish_state(multiplusDcVoltage);
+                    static int count=0;
+                    if(count++==100)//2sec
+                    {
+                        count=0;
+                        ESP_LOGD(TAG, "Multiplus DC volt: %.1f ACfreq: %.1f out power:%d", multiplusDcVoltage,multiplusAcFrequency,multiplusPinverterFiltered);
 
-                }
-              }
-            }
-            else if (frame[4] == 0x70) // 70 = DC capacity counter)
-            {
-                // 83 83 fe 23 70  81 44 16 5e 01 c2 00 00  74 ff
-                // 83 83 fe 20 70  81 44 16 5e 01 c2 00 00  77 ff
-            }
-            else if (frame[4] == 0x41) // 41 = Multiplus mode / master led
-            {
-                if ((len == 19) && (frame[5] == 0x10)) // frame[5] unknown byte
-                {
-                    masterMultiLED_LEDon = frame[6];
-                    masterMultiLED_LEDblink = frame[7];
-                    masterMultiLED_Status = frame[8];
-                    masterMultiLED_AcInputConfiguration = frame[9];
-                    int16_t t = 256 * frame[11] + frame[10];
-                    masterMultiLED_MinimumInputCurrentLimit = t / 10.0;
-                    t = 256 * frame[13] + frame[12];
-                    masterMultiLED_MaximumInputCurrentLimit = t / 10.0;
-                    t = 256 * frame[15] + frame[14];
-                    masterMultiLED_ActualInputCurrentLimit = t / 10.0;
-                    masterMultiLED_SwitchRegister = frame[16];
-                }
-            }
-            else if (frame[4] == 0x38) // ?
-            {
-                // 83 83 fe 05 38 01 c0 c0 45 ff
-                // for (int i=0;i<len;i++) extframe[i] = frame[i];
-                // extframelen = len;
-            }
-            else if (frame[4] == 0x00) // ack or response
-            {
-                if (frame[5] == 0xE6)
-                {
-                    if (frame[6] == 0x87)
-                        acked = true;
-                    else if (frame[6] == 0x85)
-                    {
-                        gotMP2data = true;
-                        int16_t v = 256 * frame[8] + frame[7];
-                        BatVolt = 0.01 * float(v);
-                        ACPower = 256 * frame[10] + frame[9];
-                        //ESP_LOGD(TAG,"bat volt: %.1f ACPower: %d",BatVolt,ACPower);
-                        // MP2Soc  = 256*frame[10] + frame[9];
-                        // ACPower = 256*frame[12] + frame[11];
-                    }
-                    else
-                    {
                     }
                 }
-            }
-            else
-            {
+                }
+                break;
+                case 0x70: // 70 = DC capacity counter)
+                {
+                    // 83 83 fe 23 70  81 44 16 5e 01 c2 00 00  74 ff
+                    // 83 83 fe 20 70  81 44 16 5e 01 c2 00 00  77 ff
+                }
+                break;
+                case 0x41: // 41 = Multiplus mode / master led
+                {
+                    if ((len == 19) && (frame[5] == 0x10)) // frame[5] unknown byte
+                    {
+                        masterMultiLED_LEDon = frame[6];
+                        masterMultiLED_LEDblink = frame[7];
+                        masterMultiLED_Status = frame[8];
+                        masterMultiLED_AcInputConfiguration = frame[9];
+                        int16_t t = 256 * frame[11] + frame[10];
+                        masterMultiLED_MinimumInputCurrentLimit = t / 10.0;
+                        t = 256 * frame[13] + frame[12];
+                        masterMultiLED_MaximumInputCurrentLimit = t / 10.0;
+                        t = 256 * frame[15] + frame[14];
+                        masterMultiLED_ActualInputCurrentLimit = t / 10.0;
+                        masterMultiLED_SwitchRegister = frame[16];
+                    }
+                }
+                break;
+                case 0x38: // ?
+                {
+                    // 83 83 fe 05 38 01 c0 c0 45 ff
+                    // for (int i=0;i<len;i++) extframe[i] = frame[i];
+                    // extframelen = len;
+                }
+                break;
+                case 0x00: // ack or response
+                {
+                    ESP_LOGV(TAG, "frame: %x %x %x", frame[4],frame[5],frame[6]);
+
+                    if (frame[5] == 0xE6)
+                    {
+                        if (frame[6] == 0x87)
+                            acked = true;
+                        else if (frame[6] == 0x85)
+                        {
+                            gotMP2data = true;
+                            int16_t v = 256 * frame[8] + frame[7];
+                            BatVolt = 0.01 * float(v);
+                            ACPower = 256 * frame[10] + frame[9];
+                            multiplusPinverterFiltered = 256 * frame[12] + frame[11];
+                            if (powerOut_ != nullptr) {
+                                powerOut_->publish_state(float(multiplusPinverterFiltered));
+                            }
+                            
+                            ESP_LOGD(TAG,"mains volt: %.1f ACPower: %d InvPower: %d",BatVolt,ACPower,multiplusPinverterFiltered);
+                            // MP2Soc  = 256*frame[10] + frame[9];
+                            // ACPower = 256*frame[12] + frame[11];
+                        }
+                        else
+                        {
+                        }
+                    }
+                }
+                break;
+                default:
+                            ESP_LOGV(TAG, "frame: %x", frame[4]);
+
+                break;
             }
         }
 
@@ -230,7 +289,42 @@ namespace esphome
                     if ((frbuf1[2] == 0xFD) && (frbuf1[4] == 0x55)) // if it was a sync frame:
                     {
                         frameNr = frbuf1[3];
+                        static int synccnt = 0;
+                        synccnt++;
+                        if (synccnt == 50) {   //every 5th sync frame, meaning 10 times per second, CommandGetRAMVarInfo is sent, NO re-send
+                            synccnt = 0;    //reset counter
+                            //build desired command
+                            int len = 0;
+                            //syslog.println("ask stuff");
+                            len = prepareCommandReadRAMVar(txbuf1, (frameNr+1) & 0x7F);
+                            //postprocess command
+                            len = commandReplaceFAtoFF(txbuf2, txbuf1, len);
+                            len = appendChecksum(txbuf2, len);
+                            //write command into Multiplus :-)
+                            uart_->write_array(txbuf2, len); // write command bytes to UART
+                        }
+
+
                         syncrxed = true;
+                        switch (command)
+                        {
+                            case 1:
+                                ESP_LOGD(TAG, "ESS command: set power to %d W", desiredPower);
+                                sendmsg(1,desiredPower);
+                                break;
+                            case 4:
+                                ESP_LOGI(TAG, "ESS command: ON");
+                                sendmsg(4, 0);
+                                break;
+                            case 3:
+                                ESP_LOGI(TAG, "ESS command: OFF");
+                                sendmsg(3, 0);
+                                break;
+                            default:
+                                break;
+                        }
+                        command=1;
+
                     }
                     else if ((frbuf1[0] == 0x83) && (frbuf1[1] == 0x83) && (frbuf1[2] == 0xFE))
                     {
@@ -277,7 +371,10 @@ namespace esphome
             outbuf[j++] = 0x00; // our own ID
             outbuf[j++] = 0xe6; // our own ID
             outbuf[j++] = 0x30; // Command read ram
-            outbuf[j++] = 0x04; // 4-bat volt
+            outbuf[j++] = 0;              //0=UmainsRMS             1st RAM ID (up to 6 possible)
+            outbuf[j++] = 0x0f;             //15=PmainsFiltered       2nd RAM ID
+            outbuf[j++] = 0x0e;             //14=PinverterFiltered    3rd RAM ID
+            outbuf[j++] = 1;             //16=PoutputFiltered      4th RAM ID
             // outbuf[j++] = 0x0D;           //13-SOC
             outbuf[j++] = 0x0E; // 14-AC Power
             return j;

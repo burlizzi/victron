@@ -2,32 +2,54 @@
 #include <sstream>
 #include "esphome/core/component.h"
 #include "esphome/components/uart/uart_component_esp_idf.h"
+#include "esphome/components/sensor/sensor.h"
+#include "esphome/components/binary_sensor/binary_sensor.h"
+#include "esphome/components/number/number.h"
 
 namespace esphome
 {
     namespace victron
     {
+
         static const char *const TAG = "Victron";
+        class Ess;
+
+        class EssNumber : public number::Number, public Parented<Ess> {
+        public:
+        EssNumber() = default;
+
+        protected:
+        void control(float timeout) override;
+        };
+
+
         class Ess : public Component
         {
         public:
-            Ess(uart::UARTComponent *uart) : uart_(uart)
+            Ess(uart::UARTComponent *uart) : uart_(uart),multiplusPinverterFiltered(0)
             {
             }
             void setup() override;
             float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
             void loop() override;
-            void on() { sendmsg(4, 0); }
-            void off() { sendmsg(3, 0); }
-            void power(short essPower) { desiredPower = essPower; }
+            void on() { command=4; isOn=true; }
+            void off() { command=3; isOn=false; }
+            void power(short essPower) { 
+                if (isOn==false) {
+                    ESP_LOGD(TAG, "ESS is off, ignoring power command %d W", essPower);
+                    return;
+                }
+                desiredPower = essPower;
+                //desiredPower =  (essPower-multiplusPinverterFiltered)/2+multiplusPinverterFiltered;
+                ESP_LOGV(TAG, "Set power to %d W (requested %d W)", desiredPower, essPower);
+                command=1;
+            }
+            static void uart_event_task(void *pvParameters);
             void dump_config() override;
             uart::IDFUARTComponent * getUart() { return static_cast<uart::IDFUARTComponent *>(this->uart_); }  
-            void on_uart_data(int size)
-            {
-                // Handle the received data here
-                ESP_LOGD(TAG, "Received %d bytes of data", size);
-                // Process the data as needed
-            }
+            void set_battery_sensor(sensor::Sensor* battery) { battery_ = battery; }
+            void set_power_sensor(sensor::Sensor* powerOut) { powerOut_ = powerOut; }
+            void set_power_number(EssNumber* powerReq) { powerReq_ = powerReq; powerReq->set_parent(this); }
         protected:
             uart::UARTComponent *uart_;
 
@@ -43,12 +65,14 @@ namespace esphome
             int preparecmd(uint8_t *outbuf, unsigned char desiredFrameNr);
 
             // Hardware
-            const int VEBUS_RXD1 = 16, VEBUS_TXD1 = 17, VEBUS_DE1 = 4; // Victron Multiplus VE.bus RS485 gpio pins
+            //const int VEBUS_RXD1 = 16, VEBUS_TXD1 = 17, VEBUS_DE1 = 4; // Victron Multiplus VE.bus RS485 gpio pins
+            bool isOn = false;
 
             bool gotMP2data = false; // true if we got a valid frame from Multiplus
             bool syncrxed = false;   // true if we got a sync frame from Multiplus
             uint32_t synctime = 0;   // time of last sync frame received from Multiplus
             int chksmfault  = 0; // number of checksum errors received from Multiplus
+            unsigned char command=0;
 
             // other variables:
             uint8_t frbuf1[128]; // assembles one complete frame received by Multiplus
@@ -82,6 +106,13 @@ namespace esphome
             float multiplusDcVoltage;
             int16_t ACPower;
             int16_t desiredPower;
+            int16_t multiplusPinverterFiltered;
+            sensor::Sensor* powerOut_=nullptr;
+            sensor::Sensor* battery_=nullptr;
+            binary_sensor::BinarySensor* ess_LED_=nullptr;
+            number::Number* powerReq_=nullptr;
+
         };
+
     }
 }
