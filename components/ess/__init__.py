@@ -96,8 +96,9 @@ async def to_code(config):
     if CONF_POWER_SUPPLY in config:
         sens = await number.new_number(config[CONF_POWER_SUPPLY], min_value=-3000, max_value=3000, step=1)
         cg.add(var.set_power_number(sens))
-    
+    cg.add_define("USE_UART_WAKE_LOOP_ON_RX")
     await cg.register_component(var, config)
+    #uart.request_wake_loop_on_rx()
     #cg.add_library("https://github.com/GitNik1/VEBus", None)
     #if CORE.using_esp_idf:
     #    add_idf_sdkconfig_option("CONFIG_ESP32_WIFI_AMPDU_RX_ENABLED", False)

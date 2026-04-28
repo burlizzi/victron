@@ -36,10 +36,11 @@ namespace esphome
             for (;;)
             {
                 // Wait for UART event.
-                if (xQueueReceive(*self->getUart()->get_uart_event_queue(), (void *)&event, (TickType_t)portMAX_DELAY))
+                //if (xQueueReceive(*self->getUart()->get_uart_event_queue(), (void *)&event, (TickType_t)portMAX_DELAY))
                 {
                     if (event.type == UART_DATA)
                     {
+                        ESP_LOGV(TAG, "UART data event, size=%d", event.size);
                         // Data received, call your callback or process data here
 
                         self->multiplusCommandHandling();
@@ -50,12 +51,12 @@ namespace esphome
         }
         void Ess::setup()
         {
-            xTaskCreate(uart_event_task, "uart_event_task", 4096, this, 12, NULL);
+            //xTaskCreate(uart_event_task, "uart_event_task", 4096, this, 12, NULL);
         }
         void Ess::loop()
         {
             
-            //multiplusCommandHandling();
+            multiplusCommandHandling();
         }
         void Ess::dump_config()
         {
@@ -153,7 +154,7 @@ namespace esphome
 
         void Ess::decodeVEbusFrame(uint8_t *frame, int len)
         {
-            ESP_LOGVV(TAG, "Decoding VE.bus frame, len=%d", len);
+            ESP_LOGD(TAG, "Decoding VE.bus frame, len=%d", len);
             // data frame
             switch(frame[4])
             {
@@ -391,7 +392,7 @@ namespace esphome
             outbuf[j++] = desiredFrameNr;
             outbuf[j++] = 0x3F; // cmd
             if (doon)
-                outbuf[j++] = 0x07; // wakeup
+                outbuf[j++] = chargeOnly_?0x05:0x07; // wakeup
             else
                 outbuf[j++] = 0x04; // sleep
             outbuf[j++] = 0x00;

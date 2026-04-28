@@ -26,7 +26,7 @@ namespace esphome
         class Ess : public Component
         {
         public:
-            Ess(uart::UARTComponent *uart) : uart_(uart),multiplusPinverterFiltered(0)
+            Ess(uart::UARTComponent *uart) : uart_(uart),multiplusPinverterFiltered(0),chargeOnly_(false)
             {
             }
             void setup() override;
@@ -34,6 +34,7 @@ namespace esphome
             void loop() override;
             void on() { command=4; isOn=true; }
             void off() { command=3; isOn=false; }
+            void chargeOnly(bool value) { chargeOnly_ = value; }
             void power(short essPower) { 
                 if (isOn==false) {
                     ESP_LOGD(TAG, "ESS is off, ignoring power command %d W", essPower);
@@ -111,6 +112,7 @@ namespace esphome
             sensor::Sensor* battery_=nullptr;
             binary_sensor::BinarySensor* ess_LED_=nullptr;
             number::Number* powerReq_=nullptr;
+            bool chargeOnly_;
 
         };
 
