@@ -32,7 +32,7 @@ from esphome.components.template import (
 from esphome.const import CONF_NAME, CONF_UART_ID
 
 DEPENDENCIES = ["uart"]
-AUTO_LOAD = []
+AUTO_LOAD = ["binary_sensor", "sensor", "number"]
 
 victron_ns = cg.esphome_ns.namespace("victron")
 Ess = victron_ns.class_("Ess", cg.Component, uart.UARTDevice)
@@ -47,6 +47,12 @@ CONFIG_SCHEMA = cv.All(
         {
             cv.GenerateID(): cv.declare_id(Ess),
             cv.Optional(CONF_POWER): sensor.sensor_schema(
+                unit_of_measurement=UNIT_WATT,
+                accuracy_decimals=1,
+                device_class=DEVICE_CLASS_POWER,
+                state_class=STATE_CLASS_MEASUREMENT,
+            ),
+            cv.Optional('ac_power'): sensor.sensor_schema(
                 unit_of_measurement=UNIT_WATT,
                 accuracy_decimals=1,
                 device_class=DEVICE_CLASS_POWER,
@@ -87,6 +93,10 @@ CONFIG_SCHEMA = cv.All(
 async def to_code(config):
     uart_component = await cg.get_variable(config[CONF_UART_ID])
     var = cg.new_Pvariable(config[CONF_ID],uart_component)
+    if 'ac_power' in config:
+        acsens = await sensor.new_sensor(config['ac_power'])
+        cg.add(var.set_ac_sensor(acsens))
+       
     if CONF_POWER in config:
         sens = await sensor.new_sensor(config[CONF_POWER])
         cg.add(var.set_power_sensor(sens))

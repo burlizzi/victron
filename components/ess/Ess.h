@@ -49,6 +49,7 @@ namespace esphome
             void dump_config() override;
             uart::IDFUARTComponent * getUart() { return static_cast<uart::IDFUARTComponent *>(this->uart_); }  
             void set_battery_sensor(sensor::Sensor* battery) { battery_ = battery; }
+          void set_ac_sensor(sensor::Sensor* powerOut) { powerAc_ = powerOut; }
             void set_power_sensor(sensor::Sensor* powerOut) { powerOut_ = powerOut; }
             void set_power_number(EssNumber* powerReq) { powerReq_ = powerReq; powerReq->set_parent(this); }
         protected:
@@ -109,6 +110,7 @@ namespace esphome
             int16_t desiredPower;
             int16_t multiplusPinverterFiltered;
             sensor::Sensor* powerOut_=nullptr;
+            sensor::Sensor* powerAc_=nullptr;
             sensor::Sensor* battery_=nullptr;
             binary_sensor::BinarySensor* ess_LED_=nullptr;
             number::Number* powerReq_=nullptr;

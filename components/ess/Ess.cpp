@@ -254,8 +254,11 @@ namespace esphome
                             if (powerOut_ != nullptr) {
                                 powerOut_->publish_state(float(multiplusPinverterFiltered));
                             }
+                            if (powerAc_ != nullptr) {
+                                powerAc_->publish_state(float(ACPower));
+                            }
                             
-                            ESP_LOGD(TAG,"mains volt: %.1f ACPower: %d InvPower: %d",BatVolt,ACPower,multiplusPinverterFiltered);
+                            ESP_LOGV(TAG,"mains volt: %.1f ACPower: %d InvPower: %d",BatVolt,ACPower,multiplusPinverterFiltered);
                             // MP2Soc  = 256*frame[10] + frame[9];
                             // ACPower = 256*frame[12] + frame[11];
                         }
