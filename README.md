@@ -150,6 +150,19 @@ ess:
   uart_id: uart_bus
 
 switch:
+
+  - platform: template
+    name: "ESS Charge Only"
+    optimistic: true
+    turn_on_action:
+      - lambda: |
+          auto ess = id(ess_unit);
+          ess->chargeOnly(true);
+    turn_off_action:
+      - lambda: |
+          auto ess = id(ess_unit);
+          ess->chargeOnly(false);
+
   - platform: template
     name: "ESS ON/OFF"
     optimistic: true
