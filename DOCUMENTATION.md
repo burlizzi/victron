@@ -1,27 +1,27 @@
-# Documentazione del Componente Victron
+# Victron Component Documentation
 
-## 📖 Introduzione
+## 📖 Introduction
 
-Il componente **Victron** è un'integrazione ESPHome che consente di comunicare con i dispositivi Victron Energy tramite protocollo UART. Supporta il controllo e il monitoraggio di sistemi ESS (Energy Storage System) e altri dispositivi compatibili.
+The **Victron** component is an ESPHome integration that enables communication with Victron Energy devices via the UART protocol. It supports control and monitoring of ESS (Energy Storage System) systems and other compatible devices.
 
-## ⚠️ Prerequisiti Importanti
+## ⚠️ Important Prerequisites
 
-Prima di utilizzare questo componente, leggi attentamente:
-- **[DISCLAIMER.md](./DISCLAIMER.md)** - Scarico di responsabilità legale
-- Questa documentazione completa
+Before using this component, please read carefully:
+- **[DISCLAIMER.md](./DISCLAIMER.md)** - Legal liability waiver
+- This complete documentation
 
-## 🔧 Requisiti di Sistema
+## 🔧 System Requirements
 
-- **ESPHome**: Versione 2023.0 o superiore
-- **Hardware**: Microcontroller con supporto UART (ESP32, ESP8266, ecc.)
-- **Connessione seriale**: UART configurato correttamente per il dispositivo Victron
-- **Librerie dipendenti**: ESPHome (esterne)
+- **ESPHome**: Version 2023.0 or later
+- **Hardware**: Microcontroller with UART support (ESP32, ESP8266, etc.)
+- **Serial Connection**: Properly configured UART for the Victron device
+- **Dependencies**: ESPHome (external libraries)
 
-## 📦 Installazione
+## 📦 Installation
 
-### 1. Configurazione nel progetto ESPHome
+### 1. Configuration in Your ESPHome Project
 
-Aggiungi il componente esterno al tuo file `configuration.yaml`:
+Add the external component to your `configuration.yaml` file:
 
 ```yaml
 external_components:
@@ -30,22 +30,22 @@ external_components:
       refresh: 300s
 ```
 
-### 2. Configurazione dell'UART
+### 2. UART Configuration
 
-Configura la connessione UART verso il dispositivo Victron:
+Configure the UART connection to your Victron device:
 
 ```yaml
 uart:
   id: uart_bus
-  rx_pin: GPIO16          # Pin RX del tuo board
-  tx_pin: GPIO17          # Pin TX del tuo board
-  flow_control_pin: GPIO4 # Pin flow control (opzionale)
-  baud_rate: 256000       # Velocità standard Victron
+  rx_pin: GPIO16          # RX pin for your board
+  tx_pin: GPIO17          # TX pin for your board
+  flow_control_pin: GPIO4 # Flow control pin (optional)
+  baud_rate: 256000       # Standard Victron speed
 ```
 
-**Nota**: Verifica i pin corretti per il tuo microcontroller nella documentazione ESPHome.
+**Note**: Verify the correct pins for your microcontroller in the ESPHome documentation.
 
-### 3. Configurazione del Componente ESS
+### 3. ESS Component Configuration
 
 ```yaml
 ess:
@@ -53,11 +53,11 @@ ess:
   uart_id: uart_bus
 ```
 
-## 🎮 Controllo e Monitoraggio
+## 🎮 Control and Monitoring
 
-### Switch per ON/OFF
+### Switch for ON/OFF Control
 
-Crea uno switch template per controllare il sistema:
+Create a template switch to control the system:
 
 ```yaml
 switch:
@@ -74,21 +74,21 @@ switch:
           ess->off();
 ```
 
-### Sensori (esempio)
+### Sensors (Example)
 
-Puoi esporre dati tramite sensori ESPHome (configura secondo le capacità del tuo dispositivo):
+Expose data through ESPHome sensors (configure according to your device's capabilities):
 
 ```yaml
 sensor:
   - platform: template
-    name: "Stato ESS"
+    name: "ESS Status"
     unit_of_measurement: ""
-    lambda: return 0.0;  # Implementa logica di lettura
+    lambda: return 0.0;  # Implement reading logic
 ```
 
-## 🔌 Connessioni Fisiche
+## 🔌 Physical Connections
 
-### Schema di collegamento UART tipico
+### Typical UART Connection Diagram
 
 ```
 Victron Device          ESP Board
@@ -96,41 +96,41 @@ Victron Device          ESP Board
 GND          ────────► GND
 RX (out)     ────────► GPIO16 (RX)
 TX (in)      ────────► GPIO17 (TX)
-Flow Control ────────► GPIO4 (opzionale)
+Flow Control ────────► GPIO4 (optional)
 ```
 
-**Importante**: 
-- Verifica i livelli di tensione (alcuni dispositivi potrebbero richiedere resistori di pull-up)
-- Utilizza cavi schermati per ridurre l'interferenza
-- Mantieni i cavi il più corti possibile
+**Important**:
+- Verify voltage levels (some devices may require pull-up resistors)
+- Use shielded cables to reduce interference
+- Keep cables as short as possible
 
 ## 🐛 Troubleshooting
 
-### Problema: Nessuna comunicazione con il dispositivo
+### Issue: No Communication with Device
 
-**Soluzioni**:
-1. Verifica i pin UART configurati
-2. Controlla la velocità in baud (dovrebbe essere 256000)
-3. Verifica il collegamento fisico e i cavi
-4. Controlla i livelli di tensione
+**Solutions**:
+1. Verify the configured UART pins
+2. Check the baud rate (should be 256000)
+3. Verify physical connections and cables
+4. Check voltage levels
 
-### Problema: Errori di comunicazione
+### Issue: Communication Errors
 
-**Soluzioni**:
-1. Riduci il numero di periferiche UART simultanee
-2. Aggiungi resistori di pull-up (4.7kΩ tipicamente)
-3. Accorcia i cavi UART
-4. Verifica l'alimentazione del dispositivo Victron
+**Solutions**:
+1. Reduce the number of simultaneous UART peripherals
+2. Add pull-up resistors (4.7kΩ typically)
+3. Shorten UART cables
+4. Verify Victron device power supply
 
-### Problema: Dispositivo non risponde ai comandi
+### Issue: Device Not Responding to Commands
 
-**Soluzioni**:
-1. Verifica che il dispositivo sia acceso e connesso
-2. Controlla lo stato nel log di ESPHome
-3. Prova a riprogrammare il microcontroller
-4. Verifica la versione del firmware del dispositivo Victron
+**Solutions**:
+1. Verify the device is powered on and connected
+2. Check status in ESPHome logs
+3. Try reprogramming the microcontroller
+4. Verify Victron device firmware version
 
-## 📊 Configurazione Completa (Esempio)
+## 📊 Complete Configuration Example
 
 ```yaml
 external_components:
@@ -163,29 +163,29 @@ switch:
           ess->off();
 ```
 
-## 🔐 Note di Sicurezza
+## 🔐 Security Notes
 
-- **Non esporre** il componente su reti pubbliche senza autenticazione
-- **Implementa** protezioni hardware appropriate se usato in sistemi critici
-- **Testa** sempre in ambiente controllato prima di deployment
-- **Monitora** costantemente in produzione
+- **Do not expose** the component on public networks without authentication
+- **Implement** appropriate hardware protections if used in critical systems
+- **Always test** in a controlled environment before deployment
+- **Continuously monitor** in production
 
-## 📞 Supporto e Segnalazione Bug
+## 📞 Support and Bug Reporting
 
-- **GitHub Issues**: Segnala bug e problemi
-- **Documentazione ESPHome**: https://esphome.io/
-- **Documentazione Victron**: https://www.victronenergy.com/
+- **GitHub Issues**: Report bugs and problems
+- **ESPHome Documentation**: https://esphome.io/
+- **Victron Documentation**: https://www.victronenergy.com/
 
-## 📝 Licenza
+## 📝 License
 
-Consulta il file LICENSE nel repository per i dettagli sulla licenza.
+See the LICENSE file in the repository for licensing details.
 
-## ⚖️ Disclaimer Legale
+## ⚖️ Legal Disclaimer
 
-Questo software è fornito **SENZA GARANZIA**. Leggi il [DISCLAIMER.md](./DISCLAIMER.md) prima di utilizzarlo, soprattutto se prevedi di usarlo in ambienti critici.
+This software is provided **WITHOUT WARRANTY**. Please read the [DISCLAIMER.md](./DISCLAIMER.md) before using it, especially if you plan to use it in critical environments.
 
 ---
 
-**Versione Documentazione**: 1.0  
-**Ultima modifica**: 2026-05-11  
-**Autore**: Burlizzi
+**Documentation Version**: 1.0  
+**Last Updated**: 2026-05-11  
+**Author**: Burlizzi
